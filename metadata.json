@@ -1,0 +1,6 @@
+{
+  "name": "Personal DSA Revision Vault",
+  "description": "Atlassian-themed personal DSA revision vault for capturing, organizing, and retrieving solved algorithm questions, multi-language solutions, and mistake logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
