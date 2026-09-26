@@ -91,6 +91,77 @@ export class QuestionService {
     return { success: true, data: saved };
   }
 
+  /**
+   * Complete multi-page question creation with both My Solution and Optimal Solution
+   */
+  createFullQuestion(input: {
+    title: string;
+    links: string[];
+    difficulty: any;
+    status: any;
+    tags: string[];
+    notes: string;
+    sheetIds: string[];
+    moduleIds: string[];
+    mySolutionCode: string;
+    mySolutionLanguage: any;
+    optimalSolutionCode: string;
+    optimalSolutionLanguage: any;
+  }): { success: true; data: Question } | { success: false; error: string } {
+    if (!input.title || !input.title.trim()) {
+      return { success: false, error: 'Question title is required.' };
+    }
+
+    const now = new Date().toISOString();
+    const questionId = `q-${Date.now()}`;
+    const codeBlocks: CodeBlock[] = [];
+
+    if (input.mySolutionCode && input.mySolutionCode.trim()) {
+      codeBlocks.push({
+        id: `cb-${Date.now()}-1`,
+        questionId,
+        source: 'MY_SOLUTION',
+        language: input.mySolutionLanguage || 'JAVA',
+        label: 'My Implementation',
+        code: input.mySolutionCode.trim(),
+        order: 0,
+        createdAt: now,
+      });
+    }
+
+    if (input.optimalSolutionCode && input.optimalSolutionCode.trim()) {
+      codeBlocks.push({
+        id: `cb-${Date.now()}-2`,
+        questionId,
+        source: 'INTERNET_SOLUTION',
+        language: input.optimalSolutionLanguage || 'CPP',
+        label: 'Optimal / Reference Solution',
+        code: input.optimalSolutionCode.trim(),
+        order: 1,
+        createdAt: now,
+      });
+    }
+
+    const newQuestion: Question = {
+      id: questionId,
+      title: input.title.trim(),
+      links: input.links || [],
+      difficulty: input.difficulty || 'MEDIUM',
+      tags: input.tags || [],
+      status: input.status || 'NEEDS_REVISION',
+      notes: input.notes || '',
+      moduleIds: input.moduleIds || [],
+      sheetIds: input.sheetIds || [],
+      codeBlocks,
+      lastViewedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const saved = this.repo.save(newQuestion);
+    return { success: true, data: saved };
+  }
+
   updateQuestion(input: UpdateQuestionInput): { success: true; data: Question } | { success: false; error: string } {
     const parsed = UpdateQuestionInputSchema.safeParse(input);
     if (!parsed.success) {

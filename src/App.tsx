@@ -13,12 +13,13 @@ import { moduleService } from './features/modules/service';
 import { questionService } from './features/questions/service';
 import { authService } from './features/auth/service';
 import { vaultStorage } from './lib/storage';
+import { vaultApi, type GitSyncResult } from './lib/api';
 
 import { AppSidebar } from './features/navigation/components/AppSidebar';
 import { QuestionListView } from './features/questions/components/QuestionListView';
 import { QuestionDetailView } from './features/questions/components/QuestionDetailView';
 import { RevisionQueueView } from './features/questions/components/RevisionQueueView';
-import { QuickAddModal } from './features/questions/components/QuickAddModal';
+import { AddQuestionPage } from './features/questions/components/AddQuestionPage';
 import { GlobalSearchModal } from './features/search/components/GlobalSearchModal';
 import { BackupExportModal } from './features/data/components/BackupExportModal';
 import { CloseConfirmationModal } from './features/data/components/CloseConfirmationModal';
@@ -29,15 +30,14 @@ import { ModuleModal } from './features/modules/components/ModuleModal';
 
 import {
   ChevronRight,
-  Folder,
   ArrowLeft,
   Search,
   Plus,
-  BookmarkCheck,
   Menu,
   Download,
   AlertTriangle,
-  X,
+  GitBranch,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from './components/ui/Button';
 
@@ -68,17 +68,18 @@ export default function App() {
   const [currentModuleId, setCurrentModuleId] = useState<string | null>(null);
   const [isRevisionQueueActive, setIsRevisionQueueActive] = useState<boolean>(false);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [isAddQuestionPageOpen, setIsAddQuestionPageOpen] = useState<boolean>(false);
 
   // Mobile sidebar open state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Modals state
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isClosePromptOpen, setIsClosePromptOpen] = useState(false);
-  const [exportToastMessage, setExportToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; icon?: 'download' | 'git' } | null>(null);
+  const [isGitSyncing, setIsGitSyncing] = useState(false);
 
   // Sheet modal state
   const [sheetModalState, setSheetModalState] = useState<{
@@ -93,19 +94,38 @@ export default function App() {
     defaultSheetId?: string;
   }>({ isOpen: false, moduleToEdit: null });
 
-  // Refresh all state
+  // Refresh all state and sync parent JSON
   const refreshAllData = useCallback(() => {
     setSheets(sheetService.getAllSheets());
     setModules(moduleService.getAllModules());
     setQuestions(questionService.getAllQuestions());
   }, []);
 
-  // Browser Window Unload Confirmation:
-  // "Whenever anyone tries to close it, always prompt user a confirmation if he has exported the json else he will loose changes"
+  // Sync to parent JSON helper
+  const syncToParentJson = useCallback(() => {
+    try {
+      const backup = vaultStorage.exportBackup();
+      vaultApi.updateParentVaultData(backup);
+    } catch (e) {
+      console.warn('Auto-sync to parent JSON warning:', e);
+    }
+  }, []);
+
+  // Fetch Parent JSON on Mount so latest parent JSON from codebase is picked up!
+  useEffect(() => {
+    vaultApi.getParentVaultData().then((parentData) => {
+      if (parentData && Array.isArray(parentData.questions) && parentData.questions.length > 0) {
+        vaultStorage.importBackup(parentData);
+        refreshAllData();
+      }
+    });
+  }, [refreshAllData]);
+
+  // Browser Window Unload Confirmation
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // Standard browser prompt to confirm leaving un-exported tab
-      const message = 'Have you exported your vault backup JSON? Any un-exported changes may be lost if browser cache is cleared.';
+      const message =
+        'Have you exported your vault backup JSON? Any un-exported changes may be lost if browser cache is cleared.';
       e.preventDefault();
       e.returnValue = message;
       return message;
@@ -115,18 +135,25 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // Global Keyboard Shortcuts (Cmd+K for search, Cmd+N for quick add, Cmd+E for quick export)
+  // Global Keyboard Shortcuts (Cmd+K for search, Cmd+E for quick export, Cmd+N for add question)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsSearchOpen(true);
-      } else if (e.key === '/' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      } else if (
+        e.key === '/' &&
+        !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+      ) {
         e.preventDefault();
         setIsSearchOpen(true);
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         handleDirectExport();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setIsAddQuestionPageOpen(true);
+        setSelectedQuestionId(null);
       }
     }
     window.addEventListener('keydown', handleKeyDown);
@@ -148,10 +175,38 @@ export default function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      setExportToastMessage(`Exported ${backup.questions.length} problems & solutions to JSON!`);
-      setTimeout(() => setExportToastMessage(null), 3500);
+      setToastMessage({
+        text: `Exported ${backup.questions.length} problems & solutions to JSON!`,
+        icon: 'download',
+      });
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (err) {
       alert('Failed to export JSON backup.');
+    }
+  };
+
+  // 1-Click Direct Git Sync of Parent JSON
+  const handleDirectGitSync = async () => {
+    setIsGitSyncing(true);
+    try {
+      const currentBackup = vaultStorage.exportBackup();
+      const result: GitSyncResult = await vaultApi.syncParentJsonWithGit(currentBackup);
+      if (result.success) {
+        setToastMessage({
+          text: `Parent JSON synced to Git (Commit ${result.commitSha || 'HEAD'})!`,
+          icon: 'git',
+        });
+      } else {
+        setToastMessage({
+          text: `Saved to disk (Git: ${result.error || 'clean'})`,
+          icon: 'git',
+        });
+      }
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (e: any) {
+      alert('Git sync error: ' + e.message);
+    } finally {
+      setIsGitSyncing(false);
     }
   };
 
@@ -168,7 +223,7 @@ export default function App() {
     if (currentSheetId) {
       return q.sheetIds.includes(currentSheetId);
     }
-    return true; // All questions
+    return true;
   });
 
   // Handlers for Question Operations
@@ -177,17 +232,38 @@ export default function App() {
     if (updated) {
       setQuestions((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
     }
+    setIsAddQuestionPageOpen(false);
     setSelectedQuestionId(q.id);
   };
 
-  const handleQuickAddQuestion = (input: QuickAddQuestionInput) => {
-    const result = questionService.quickAdd({
-      ...input,
-      moduleId: input.moduleId || currentModuleId || undefined,
-    });
+  // Full-page Add Question Handler
+  const handleSaveFullQuestion = (input: {
+    title: string;
+    links: string[];
+    difficulty: any;
+    status: any;
+    tags: string[];
+    notes: string;
+    sheetIds: string[];
+    moduleIds: string[];
+    mySolutionCode: string;
+    mySolutionLanguage: any;
+    optimalSolutionCode: string;
+    optimalSolutionLanguage: any;
+  }) => {
+    const result = questionService.createFullQuestion(input);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
+      setIsAddQuestionPageOpen(false);
       handleSelectQuestion(result.data);
+      setToastMessage({
+        text: `Problem "${result.data.title}" added to Vault!`,
+        icon: 'git',
+      });
+      setTimeout(() => setToastMessage(null), 3000);
+    } else {
+      alert(result.error);
     }
   };
 
@@ -195,6 +271,7 @@ export default function App() {
     const result = questionService.updateQuestion(input);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -202,6 +279,7 @@ export default function App() {
     const result = questionService.updateStatus(id, status);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -209,6 +287,7 @@ export default function App() {
     const result = questionService.updateNotes(id, notes);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -216,6 +295,7 @@ export default function App() {
     const result = questionService.deleteQuestion(id);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
       if (selectedQuestionId === id) {
         setSelectedQuestionId(null);
       }
@@ -238,6 +318,7 @@ export default function App() {
     });
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -245,6 +326,7 @@ export default function App() {
     const result = questionService.updateCodeBlock(block);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -253,6 +335,7 @@ export default function App() {
     const result = questionService.deleteCodeBlock(selectedQuestionId, blockId);
     if (result.success) {
       refreshAllData();
+      syncToParentJson();
     }
   };
 
@@ -264,12 +347,14 @@ export default function App() {
       sheetService.createSheet({ name, description });
     }
     refreshAllData();
+    syncToParentJson();
   };
 
   const handleDeleteSheet = (id: string) => {
     sheetService.deleteSheet(id);
     if (currentSheetId === id) setCurrentSheetId(null);
     refreshAllData();
+    syncToParentJson();
   };
 
   const handleSaveModule = (name: string, description: string, sheetIds: string[]) => {
@@ -284,12 +369,14 @@ export default function App() {
       moduleService.createModule({ name, description, sheetIds });
     }
     refreshAllData();
+    syncToParentJson();
   };
 
   const handleDeleteModule = (id: string) => {
     moduleService.deleteModule(id);
     if (currentModuleId === id) setCurrentModuleId(null);
     refreshAllData();
+    syncToParentJson();
   };
 
   const handleLogout = () => {
@@ -304,11 +391,11 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-surface)] text-[var(--color-ink)] relative">
-      {/* Toast notification for direct JSON export */}
-      {exportToastMessage && (
+      {/* Toast Notification */}
+      {toastMessage && (
         <div className="fixed bottom-4 right-4 z-50 bg-[var(--color-brand)] text-white px-4 py-2.5 rounded-md shadow-xl text-xs font-semibold flex items-center gap-2 border border-blue-400">
-          <Download size={14} />
-          <span>{exportToastMessage}</span>
+          {toastMessage.icon === 'git' ? <GitBranch size={14} /> : <Download size={14} />}
+          <span>{toastMessage.text}</span>
         </div>
       )}
 
@@ -338,12 +425,14 @@ export default function App() {
             setCurrentModuleId(null);
             setIsRevisionQueueActive(false);
             setSelectedQuestionId(null);
+            setIsAddQuestionPageOpen(false);
             setIsMobileSidebarOpen(false);
           }}
           onSelectModule={(moduleId) => {
             setCurrentModuleId(moduleId);
             setIsRevisionQueueActive(false);
             setSelectedQuestionId(null);
+            setIsAddQuestionPageOpen(false);
             setIsMobileSidebarOpen(false);
           }}
           onSelectRevisionQueue={() => {
@@ -351,9 +440,14 @@ export default function App() {
             setCurrentSheetId(null);
             setCurrentModuleId(null);
             setSelectedQuestionId(null);
+            setIsAddQuestionPageOpen(false);
             setIsMobileSidebarOpen(false);
           }}
-          onOpenQuickAdd={() => setIsQuickAddOpen(true)}
+          onOpenQuickAdd={() => {
+            setIsAddQuestionPageOpen(true);
+            setSelectedQuestionId(null);
+            setIsMobileSidebarOpen(false);
+          }}
           onOpenSearch={() => setIsSearchOpen(true)}
           onOpenDataBackup={() => setIsBackupOpen(true)}
           onCreateSheet={() => setSheetModalState({ isOpen: true, sheetToEdit: null })}
@@ -374,7 +468,7 @@ export default function App() {
 
       {/* Main Workspace Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        {/* Top Header & Breadcrumb Bar */}
+        {/* Top Header & Breadcrumb Bar (Uncluttered, serene) */}
         <header className="h-12 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 text-xs text-[var(--color-ink-subtle)] min-w-0">
             {/* Mobile menu toggle */}
@@ -394,13 +488,23 @@ export default function App() {
                   setCurrentModuleId(null);
                   setIsRevisionQueueActive(false);
                   setSelectedQuestionId(null);
+                  setIsAddQuestionPageOpen(false);
                 }}
                 className="hover:text-[var(--color-ink)] cursor-pointer truncate font-medium"
               >
                 DSA Vault
               </span>
 
-              {isRevisionQueueActive && (
+              {isAddQuestionPageOpen && (
+                <>
+                  <ChevronRight size={13} className="shrink-0 text-[var(--color-ink-subtle)]" />
+                  <span className="font-semibold text-[var(--color-brand)] truncate">
+                    New Question
+                  </span>
+                </>
+              )}
+
+              {isRevisionQueueActive && !isAddQuestionPageOpen && (
                 <>
                   <ChevronRight size={13} className="shrink-0 text-[var(--color-ink-subtle)]" />
                   <span className="font-semibold text-amber-700 dark:text-amber-400 truncate">
@@ -409,7 +513,7 @@ export default function App() {
                 </>
               )}
 
-              {activeSheet && (
+              {activeSheet && !isAddQuestionPageOpen && (
                 <>
                   <ChevronRight size={13} className="shrink-0 text-[var(--color-ink-subtle)]" />
                   <span
@@ -424,7 +528,7 @@ export default function App() {
                 </>
               )}
 
-              {activeModule && (
+              {activeModule && !isAddQuestionPageOpen && (
                 <>
                   <ChevronRight size={13} className="shrink-0 text-[var(--color-ink-subtle)]" />
                   <span
@@ -436,7 +540,7 @@ export default function App() {
                 </>
               )}
 
-              {activeQuestion && (
+              {activeQuestion && !isAddQuestionPageOpen && (
                 <>
                   <ChevronRight size={13} className="shrink-0 text-[var(--color-ink-subtle)]" />
                   <span className="font-semibold text-[var(--color-ink)] truncate">
@@ -447,18 +551,33 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Header Actions */}
+          {/* Quick Header Actions: Clean, Uncluttered (No duplicate +Question button!) */}
           <div className="flex items-center gap-2 shrink-0">
-            {selectedQuestionId && (
+            {(selectedQuestionId || isAddQuestionPageOpen) && (
               <Button
                 size="sm"
                 variant="subtle"
-                onClick={() => setSelectedQuestionId(null)}
+                onClick={() => {
+                  setSelectedQuestionId(null);
+                  setIsAddQuestionPageOpen(false);
+                }}
                 icon={<ArrowLeft size={13} />}
               >
                 Back to List
               </Button>
             )}
+
+            {/* Sync Parent JSON to Git Button */}
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={handleDirectGitSync}
+              disabled={isGitSyncing}
+              className="hidden md:inline-flex text-xs"
+              icon={<GitBranch size={13} className="text-[var(--color-brand)]" />}
+            >
+              {isGitSyncing ? 'Syncing...' : 'Sync Git'}
+            </Button>
 
             {/* Safety Backup Check Button */}
             <button
@@ -485,26 +604,25 @@ export default function App() {
               size="sm"
               variant="subtle"
               onClick={() => setIsSearchOpen(true)}
-              className="hidden sm:inline-flex"
               icon={<Search size={14} />}
             >
               Search (⌘K)
-            </Button>
-
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => setIsQuickAddOpen(true)}
-              icon={<Plus size={14} />}
-            >
-              + Question
             </Button>
           </div>
         </header>
 
         {/* View Router */}
         <main className="flex-1 flex flex-col h-[calc(100vh-3rem)] overflow-hidden">
-          {activeQuestion ? (
+          {isAddQuestionPageOpen ? (
+            <AddQuestionPage
+              sheets={sheets}
+              modules={modules}
+              defaultSheetId={currentSheetId}
+              defaultModuleId={currentModuleId}
+              onBack={() => setIsAddQuestionPageOpen(false)}
+              onSave={handleSaveFullQuestion}
+            />
+          ) : activeQuestion ? (
             <QuestionDetailView
               question={activeQuestion}
               allSheets={sheets}
@@ -531,7 +649,10 @@ export default function App() {
               currentModule={activeModule}
               allModules={modules}
               onSelectQuestion={handleSelectQuestion}
-              onOpenQuickAdd={() => setIsQuickAddOpen(true)}
+              onOpenQuickAdd={() => {
+                setIsAddQuestionPageOpen(true);
+                setSelectedQuestionId(null);
+              }}
               onUpdateStatus={handleUpdateStatus}
               onDeleteQuestion={handleDeleteQuestion}
             />
@@ -540,14 +661,6 @@ export default function App() {
       </div>
 
       {/* Global Modals */}
-      <QuickAddModal
-        isOpen={isQuickAddOpen}
-        onClose={() => setIsQuickAddOpen(false)}
-        modules={modules}
-        defaultModuleId={currentModuleId || undefined}
-        onSave={handleQuickAddQuestion}
-      />
-
       <GlobalSearchModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
@@ -562,6 +675,7 @@ export default function App() {
         onDataRestored={() => {
           refreshAllData();
           setSelectedQuestionId(null);
+          setIsAddQuestionPageOpen(false);
         }}
       />
 

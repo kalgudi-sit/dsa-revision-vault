@@ -100,17 +100,6 @@ export function QuestionListView({
             </p>
           )}
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={onOpenQuickAdd}
-            icon={<Plus size={14} />}
-          >
-            + New Question
-          </Button>
-        </div>
       </div>
 
       {/* Stats Summary Bar */}
