@@ -181,7 +181,11 @@ export default function App() {
       });
       setTimeout(() => setToastMessage(null), 3500);
     } catch (err) {
-      alert('Failed to export JSON backup.');
+      setToastMessage({
+        text: 'Failed to export JSON backup.',
+        icon: 'download',
+      });
+      setTimeout(() => setToastMessage(null), 3500);
     }
   };
 
@@ -204,7 +208,11 @@ export default function App() {
       }
       setTimeout(() => setToastMessage(null), 4000);
     } catch (e: any) {
-      alert('Git sync error: ' + e.message);
+      setToastMessage({
+        text: 'Git sync error: ' + (e.message || 'Check terminal'),
+        icon: 'git',
+      });
+      setTimeout(() => setToastMessage(null), 4000);
     } finally {
       setIsGitSyncing(false);
     }
@@ -263,7 +271,11 @@ export default function App() {
       });
       setTimeout(() => setToastMessage(null), 3000);
     } else {
-      alert(result.error);
+      setToastMessage({
+        text: result.error || 'Failed to save problem.',
+        icon: 'git',
+      });
+      setTimeout(() => setToastMessage(null), 4000);
     }
   };
 

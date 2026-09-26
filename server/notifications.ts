@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getDecryptedRecipients, maskEmail } from './crypto';
+import { getDecryptedRecipients, maskEmail } from './crypto.ts';
 
 export interface NotificationLog {
   id: string;

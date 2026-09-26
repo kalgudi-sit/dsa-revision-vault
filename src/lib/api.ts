@@ -39,7 +39,7 @@ async function safeJsonFetch(url: string, options?: RequestInit) {
     if (contentType && contentType.includes('application/json')) {
       return await res.json();
     }
-    return { success: true };
+    return { success: false, error: 'Server did not return a JSON response.' };
   } catch (e: any) {
     return { success: false, error: e.message || 'Network request failed' };
   }

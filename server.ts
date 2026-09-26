@@ -8,7 +8,7 @@ import {
   validateResetToken,
   consumeResetToken,
   getNotificationLogs,
-} from './server/notifications';
+} from './server/notifications.ts';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
