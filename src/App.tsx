@@ -11,6 +11,7 @@ import { type SolutionSource, type Language, type CodeBlock } from './features/c
 import { sheetService } from './features/sheets/service';
 import { moduleService } from './features/modules/service';
 import { questionService } from './features/questions/service';
+import { authService } from './features/auth/service';
 import { vaultStorage } from './lib/storage';
 
 import { AppSidebar } from './features/navigation/components/AppSidebar';
@@ -20,7 +21,9 @@ import { RevisionQueueView } from './features/questions/components/RevisionQueue
 import { QuickAddModal } from './features/questions/components/QuickAddModal';
 import { GlobalSearchModal } from './features/search/components/GlobalSearchModal';
 import { BackupExportModal } from './features/data/components/BackupExportModal';
+import { CloseConfirmationModal } from './features/data/components/CloseConfirmationModal';
 import { AccountAuthModal } from './features/auth/components/AccountAuthModal';
+import { LoginScreen } from './features/auth/components/LoginScreen';
 import { SheetModal } from './features/sheets/components/SheetModal';
 import { ModuleModal } from './features/modules/components/ModuleModal';
 
@@ -32,11 +35,18 @@ import {
   Plus,
   BookmarkCheck,
   Menu,
+  Download,
+  AlertTriangle,
   X,
 } from 'lucide-react';
 import { Button } from './components/ui/Button';
 
 export default function App() {
+  // Authentication check: Single-user gatekeeper
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return authService.getCurrentUser() !== null;
+  });
+
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark'>(() => vaultStorage.getTheme());
 
@@ -67,6 +77,8 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isClosePromptOpen, setIsClosePromptOpen] = useState(false);
+  const [exportToastMessage, setExportToastMessage] = useState<string | null>(null);
 
   // Sheet modal state
   const [sheetModalState, setSheetModalState] = useState<{
@@ -88,7 +100,22 @@ export default function App() {
     setQuestions(questionService.getAllQuestions());
   }, []);
 
-  // Global Keyboard Shortcuts (Cmd+K for search, Cmd+N for quick add)
+  // Browser Window Unload Confirmation:
+  // "Whenever anyone tries to close it, always prompt user a confirmation if he has exported the json else he will loose changes"
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Standard browser prompt to confirm leaving un-exported tab
+      const message = 'Have you exported your vault backup JSON? Any un-exported changes may be lost if browser cache is cleared.';
+      e.preventDefault();
+      e.returnValue = message;
+      return message;
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // Global Keyboard Shortcuts (Cmd+K for search, Cmd+N for quick add, Cmd+E for quick export)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -97,11 +124,36 @@ export default function App() {
       } else if (e.key === '/' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
         e.preventDefault();
         setIsSearchOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        handleDirectExport();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // 1-Click Direct Backup Export
+  const handleDirectExport = () => {
+    try {
+      const backup = vaultStorage.exportBackup();
+      const jsonString = JSON.stringify(backup, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `dsa_revision_vault_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setExportToastMessage(`Exported ${backup.questions.length} problems & solutions to JSON!`);
+      setTimeout(() => setExportToastMessage(null), 3500);
+    } catch (err) {
+      alert('Failed to export JSON backup.');
+    }
+  };
 
   // Selected entities
   const activeSheet = sheets.find((s) => s.id === currentSheetId) || null;
@@ -121,7 +173,6 @@ export default function App() {
 
   // Handlers for Question Operations
   const handleSelectQuestion = (q: Question) => {
-    // Record view timestamp
     const updated = questionService.recordView(q.id);
     if (updated) {
       setQuestions((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
@@ -165,7 +216,9 @@ export default function App() {
     const result = questionService.deleteQuestion(id);
     if (result.success) {
       refreshAllData();
-      setSelectedQuestionId(null);
+      if (selectedQuestionId === id) {
+        setSelectedQuestionId(null);
+      }
     }
   };
 
@@ -239,8 +292,26 @@ export default function App() {
     refreshAllData();
   };
 
+  const handleLogout = () => {
+    authService.logout();
+    setIsAuthenticated(false);
+  };
+
+  // If user is not authenticated, display Single-User Login Screen
+  if (!isAuthenticated) {
+    return <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-surface)] text-[var(--color-ink)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-surface)] text-[var(--color-ink)] relative">
+      {/* Toast notification for direct JSON export */}
+      {exportToastMessage && (
+        <div className="fixed bottom-4 right-4 z-50 bg-[var(--color-brand)] text-white px-4 py-2.5 rounded-md shadow-xl text-xs font-semibold flex items-center gap-2 border border-blue-400">
+          <Download size={14} />
+          <span>{exportToastMessage}</span>
+        </div>
+      )}
+
       {/* Mobile Sidebar Backdrop */}
       {isMobileSidebarOpen && (
         <div
@@ -296,6 +367,8 @@ export default function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onOpenAccount={() => setIsAccountOpen(true)}
+          onLogout={handleLogout}
+          onDirectExportBackup={handleDirectExport}
         />
       </div>
 
@@ -387,6 +460,27 @@ export default function App() {
               </Button>
             )}
 
+            {/* Safety Backup Check Button */}
+            <button
+              type="button"
+              onClick={() => setIsClosePromptOpen(true)}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded text-xs border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 hover:bg-amber-100 transition-colors"
+              title="Verify vault safety status before closing"
+            >
+              <AlertTriangle size={13} className="text-amber-600" />
+              <span>Safety Check</span>
+            </button>
+
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={handleDirectExport}
+              className="hidden sm:inline-flex"
+              icon={<Download size={13} />}
+            >
+              Export JSON
+            </Button>
+
             <Button
               size="sm"
               variant="subtle"
@@ -439,6 +533,7 @@ export default function App() {
               onSelectQuestion={handleSelectQuestion}
               onOpenQuickAdd={() => setIsQuickAddOpen(true)}
               onUpdateStatus={handleUpdateStatus}
+              onDeleteQuestion={handleDeleteQuestion}
             />
           )}
         </main>
@@ -468,6 +563,12 @@ export default function App() {
           refreshAllData();
           setSelectedQuestionId(null);
         }}
+      />
+
+      <CloseConfirmationModal
+        isOpen={isClosePromptOpen}
+        onClose={() => setIsClosePromptOpen(false)}
+        onConfirmClose={() => setIsClosePromptOpen(false)}
       />
 
       <AccountAuthModal

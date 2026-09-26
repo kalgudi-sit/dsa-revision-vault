@@ -10,17 +10,17 @@ import {
   Plus,
   BookmarkCheck,
   Search,
-  Settings,
-  MoreVertical,
   Database,
   Moon,
   Sun,
-  LogOut,
   KeyRound,
   FileCode2,
   Trash2,
   Edit2,
   FolderPlus,
+  Download,
+  LogOut,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
@@ -46,6 +46,8 @@ interface AppSidebarProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onOpenAccount: () => void;
+  onLogout: () => void;
+  onDirectExportBackup: () => void;
 }
 
 export function AppSidebar({
@@ -70,6 +72,8 @@ export function AppSidebar({
   theme,
   onToggleTheme,
   onOpenAccount,
+  onLogout,
+  onDirectExportBackup,
 }: AppSidebarProps) {
   // Track expanded state of sheets
   const [expandedSheets, setExpandedSheets] = useState<Record<string, boolean>>({
@@ -106,19 +110,29 @@ export function AppSidebar({
               DSA Revision Vault
             </h1>
             <span className="text-[10px] text-[var(--color-ink-subtle)]">
-              Personal Knowledge Base
+              Single-User Edition
             </span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface)] rounded transition-colors"
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface)] rounded transition-colors"
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-danger)] hover:bg-[var(--color-surface)] rounded transition-colors"
+            title="Lock Vault & Log Out"
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Global Quick Action Buttons */}
@@ -329,6 +343,20 @@ export function AppSidebar({
 
       {/* Footer Utility & Account Bar */}
       <div className="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] space-y-2">
+        {/* Quick 1-click JSON Export Button */}
+        <button
+          type="button"
+          onClick={onDirectExportBackup}
+          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs bg-[var(--color-brand-subtle)] text-[var(--color-brand)] font-medium hover:bg-[var(--color-brand)] hover:text-white transition-colors"
+          title="Download latest JSON backup immediately"
+        >
+          <span className="flex items-center gap-2">
+            <Download size={13} />
+            <span>Export Backup (.json)</span>
+          </span>
+          <span className="text-[10px] font-mono">1-Click</span>
+        </button>
+
         <button
           type="button"
           onClick={onOpenDataBackup}
@@ -336,10 +364,10 @@ export function AppSidebar({
         >
           <span className="flex items-center gap-2">
             <Database size={13} className="text-[var(--color-brand)]" />
-            <span>Backup / Export JSON</span>
+            <span>Restore & Data Tools</span>
           </span>
           <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium">
-            Ready
+            Saved
           </span>
         </button>
 

@@ -463,13 +463,10 @@ class VaultStorageManager {
   }
 
   getAuthSession(): { email: string; token: string } | null {
-    if (!this.isBrowser()) return { email: INITIAL_USER.email, token: 'mock-session-init' };
+    if (!this.isBrowser()) return null;
     const raw = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
     if (!raw) {
-      // Default to logged-in session for seamless single-user UX
-      const defaultSession = { email: INITIAL_USER.email, token: 'session-authed' };
-      localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(defaultSession));
-      return defaultSession;
+      return null;
     }
     try {
       return JSON.parse(raw);

@@ -7,7 +7,19 @@ import {
 } from '../types';
 import { UnderlineTabs, type TabItem } from '../../../components/ui/UnderlineTabs';
 import { Button } from '../../../components/ui/Button';
-import { Copy, Check, Plus, Trash2, Edit2, Code2, Sparkles } from 'lucide-react';
+import {
+  Copy,
+  Check,
+  Plus,
+  Trash2,
+  Edit2,
+  Code2,
+  Maximize2,
+  Minimize2,
+  Search,
+  WrapText,
+  Download,
+} from 'lucide-react';
 
 interface CodeBlockViewerProps {
   questionId: string;
@@ -31,6 +43,12 @@ export function CodeBlockViewer({
   const [isAddingVersion, setIsAddingVersion] = useState(false);
   const [newVersionLabel, setNewVersionLabel] = useState('');
   const [newVersionCode, setNewVersionCode] = useState('');
+
+  // Usability features: Full screen code view, line wrap toggle, search within code
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isWordWrap, setIsWordWrap] = useState(false);
+  const [codeFilterQuery, setCodeFilterQuery] = useState('');
+  const [fontSize, setFontSize] = useState<'xs' | 'sm' | 'base'>('xs');
 
   // Filter versions for active source & language
   const currentVersions = codeBlocks.filter(
@@ -68,6 +86,18 @@ export function CodeBlockViewer({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleDownloadCode = () => {
+    if (!selectedVersion) return;
+    const config = SUPPORTED_LANGUAGES[selectedVersion.language];
+    const blob = new Blob([selectedVersion.code], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `solution_${selectedVersion.label.replace(/\s+/g, '_').toLowerCase()}${config.extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleStartEdit = () => {
     if (!selectedVersion) return;
     setEditBuffer(selectedVersion.code);
@@ -99,10 +129,18 @@ export function CodeBlockViewer({
     setIsAddingVersion(false);
   };
 
+  const codeLines = selectedVersion ? selectedVersion.code.split('\n') : [];
+  const fontSizeClass = fontSize === 'xs' ? 'text-xs' : fontSize === 'sm' ? 'text-sm' : 'text-base';
+  const lineHClass = fontSize === 'xs' ? 'h-5 leading-5' : fontSize === 'sm' ? 'h-6 leading-6' : 'h-7 leading-7';
+
+  const containerClasses = isFullscreen
+    ? 'fixed inset-0 z-50 flex flex-col bg-[var(--color-surface)] w-screen h-screen'
+    : 'flex flex-col h-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md overflow-hidden relative';
+
   return (
-    <div className="flex flex-col h-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md overflow-hidden">
+    <div className={containerClasses}>
       {/* Top level tabs: My Solution vs Internet Solution */}
-      <div className="bg-[var(--color-surface-sunken)] px-4 pt-2 border-b border-[var(--color-border)] flex items-center justify-between">
+      <div className="bg-[var(--color-surface-sunken)] px-4 pt-2 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
         <UnderlineTabs
           tabs={sourceTabs}
           activeId={activeSource}
@@ -113,14 +151,40 @@ export function CodeBlockViewer({
           }}
         />
 
-        <div className="text-xs text-[var(--color-ink-subtle)] hidden sm:block">
-          {activeSource === 'MY_SOLUTION' ? 'Your personal solutions' : 'Editorial & references'}
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-[var(--color-ink-subtle)] hidden sm:block">
+            {activeSource === 'MY_SOLUTION' ? 'Personal implementation' : 'Editorial & patterns'}
+          </div>
+
+          {/* Full Screen Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className={`p-1.5 rounded transition-colors text-xs flex items-center gap-1.5 ${
+              isFullscreen
+                ? 'bg-[var(--color-brand)] text-white font-medium shadow-xs'
+                : 'text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)] hover:bg-[var(--color-border)]'
+            }`}
+            title={isFullscreen ? 'Exit full screen view (Esc)' : 'Open code in full screen'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 size={14} />
+                <span className="text-[11px]">Exit Full Screen</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 size={14} />
+                <span className="text-[11px] hidden sm:inline">Full Screen</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Language sub-tabs */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="flex items-center gap-1.5">
+      {/* Language sub-tabs and controls */}
+      <div className="flex flex-wrap items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0 gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto">
           {(['JAVA', 'CPP', 'PYTHON'] as Language[]).map((lang) => {
             const count = codeBlocks.filter(
               (b) => b.source === activeSource && b.language === lang
@@ -152,24 +216,68 @@ export function CodeBlockViewer({
           })}
         </div>
 
-        {/* Action button to add version */}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setIsAddingVersion(true);
-            setIsEditing(false);
-            setNewVersionCode(SUPPORTED_LANGUAGES[activeLanguage].defaultBoilerplate);
-          }}
-          icon={<Plus size={14} />}
-        >
-          Add Version
-        </Button>
+        {/* Action buttons & Editor controls */}
+        <div className="flex items-center gap-2">
+          {/* Font Size controls in full-screen or regular */}
+          <div className="hidden sm:flex items-center gap-1 border border-[var(--color-border)] rounded p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setFontSize('xs')}
+              className={`px-1.5 py-0.5 rounded ${fontSize === 'xs' ? 'bg-[var(--color-surface-sunken)] font-bold text-[var(--color-brand)]' : 'text-[var(--color-ink-subtle)]'}`}
+              title="Small code font"
+            >
+              A-
+            </button>
+            <button
+              type="button"
+              onClick={() => setFontSize('sm')}
+              className={`px-1.5 py-0.5 rounded ${fontSize === 'sm' ? 'bg-[var(--color-surface-sunken)] font-bold text-[var(--color-brand)]' : 'text-[var(--color-ink-subtle)]'}`}
+              title="Medium code font"
+            >
+              A
+            </button>
+            <button
+              type="button"
+              onClick={() => setFontSize('base')}
+              className={`px-1.5 py-0.5 rounded ${fontSize === 'base' ? 'bg-[var(--color-surface-sunken)] font-bold text-[var(--color-brand)]' : 'text-[var(--color-ink-subtle)]'}`}
+              title="Large code font"
+            >
+              A+
+            </button>
+          </div>
+
+          {/* Word wrap toggle */}
+          <button
+            type="button"
+            onClick={() => setIsWordWrap(!isWordWrap)}
+            className={`p-1.5 rounded text-xs transition-colors border ${
+              isWordWrap
+                ? 'bg-[var(--color-brand-subtle)] text-[var(--color-brand)] border-[var(--color-brand)]'
+                : 'border-[var(--color-border)] text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)]'
+            }`}
+            title="Toggle word wrap"
+          >
+            <WrapText size={14} />
+          </button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setIsAddingVersion(true);
+              setIsEditing(false);
+              setNewVersionCode(SUPPORTED_LANGUAGES[activeLanguage].defaultBoilerplate);
+            }}
+            icon={<Plus size={14} />}
+          >
+            Add Version
+          </Button>
+        </div>
       </div>
 
       {/* Version selector bar (if multiple versions exist) */}
       {currentVersions.length > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-sunken)] border-b border-[var(--color-border)] overflow-x-auto">
+        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-sunken)] border-b border-[var(--color-border)] overflow-x-auto shrink-0">
           <span className="text-xs font-medium text-[var(--color-ink-subtle)] shrink-0">
             Versions:
           </span>
@@ -186,7 +294,7 @@ export function CodeBlockViewer({
                   }}
                   className={`text-xs px-2.5 py-1 rounded transition-colors whitespace-nowrap flex items-center gap-1.5 ${
                     isSelected
-                      ? 'bg-[var(--color-surface)] text-[var(--color-ink)] font-semibold shadow-xs border border-[var(--color-border)]'
+                      ? 'bg-[var(--color-surface)] text-[var(--color-ink)] font-semibold shadow-xs border border-[var(--color-border)] ring-1 ring-[var(--color-brand)]/20'
                       : 'text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface)]/60'
                   }`}
                 >
@@ -199,9 +307,9 @@ export function CodeBlockViewer({
       )}
 
       {/* Main Content: Add Version Form OR Editor/Viewer */}
-      <div className="flex-1 flex flex-col min-h-[380px] p-0 relative">
+      <div className="flex-1 flex flex-col min-h-0 relative">
         {isAddingVersion ? (
-          <form onSubmit={handleCreateVersion} className="p-4 flex flex-col gap-3 flex-1">
+          <form onSubmit={handleCreateVersion} className="p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-[var(--color-ink)] flex items-center gap-2">
                 <Code2 size={16} className="text-[var(--color-brand)]" />
@@ -230,20 +338,20 @@ export function CodeBlockViewer({
               />
             </div>
 
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col min-h-[240px]">
               <label className="block text-xs font-medium text-[var(--color-ink-subtle)] mb-1">
                 Code ({SUPPORTED_LANGUAGES[activeLanguage].name})
               </label>
               <textarea
                 value={newVersionCode}
                 onChange={(e) => setNewVersionCode(e.target.value)}
-                rows={12}
+                rows={16}
                 className="w-full flex-1 font-mono text-xs p-3 rounded border border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] resize-none"
                 placeholder="// Paste code here..."
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2 pt-2 shrink-0">
               <Button size="sm" variant="subtle" type="button" onClick={() => setIsAddingVersion(false)}>
                 Cancel
               </Button>
@@ -253,9 +361,9 @@ export function CodeBlockViewer({
             </div>
           </form>
         ) : selectedVersion ? (
-          <div className="flex flex-col flex-1 h-full">
+          <div className="flex flex-col flex-1 h-full min-h-0">
             {/* Toolbar for selected version */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] text-xs">
+            <div className="flex flex-wrap items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] text-xs shrink-0 gap-2">
               <div className="flex items-center gap-2">
                 {isEditing ? (
                   <input
@@ -270,10 +378,11 @@ export function CodeBlockViewer({
                   </span>
                 )}
                 <span className="text-[var(--color-ink-subtle)] text-[11px]">
-                  Updated {new Date(selectedVersion.createdAt).toLocaleDateString()}
+                  ({codeLines.length} lines) • Updated {new Date(selectedVersion.createdAt).toLocaleDateString()}
                 </span>
               </div>
 
+              {/* Actions */}
               <div className="flex items-center gap-1.5">
                 <Button
                   size="sm"
@@ -283,6 +392,15 @@ export function CodeBlockViewer({
                 >
                   {copied ? 'Copied' : 'Copy'}
                 </Button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadCode}
+                  className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-brand)] transition-colors rounded hover:bg-[var(--color-surface-sunken)]"
+                  title="Download source code file"
+                >
+                  <Download size={14} />
+                </button>
 
                 {isEditing ? (
                   <>
@@ -307,9 +425,7 @@ export function CodeBlockViewer({
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm('Delete this code version?')) {
-                      onDeleteVersion(selectedVersion.id);
-                    }
+                    onDeleteVersion(selectedVersion.id);
                   }}
                   className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-danger)] transition-colors rounded hover:bg-[var(--color-surface-sunken)]"
                   title="Delete version"
@@ -321,28 +437,32 @@ export function CodeBlockViewer({
 
             {/* Code Body */}
             {isEditing ? (
-              <div className="p-3 flex-1 flex flex-col bg-[var(--color-surface-sunken)]">
+              <div className="p-3 flex-1 flex flex-col bg-[var(--color-surface-sunken)] min-h-0">
                 <textarea
                   value={editBuffer}
                   onChange={(e) => setEditBuffer(e.target.value)}
                   className="w-full flex-1 font-mono text-xs p-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] leading-relaxed resize-none"
-                  rows={16}
+                  rows={20}
                 />
               </div>
             ) : (
-              <div className="flex-1 overflow-auto bg-[var(--color-surface-sunken)] p-0 text-xs font-mono select-text">
+              <div className="flex-1 overflow-auto bg-[var(--color-surface-sunken)] p-0 font-mono select-text min-h-0">
                 <div className="flex min-w-full">
                   {/* Line numbers */}
-                  <div className="py-3 pl-3 pr-2 text-right select-none text-[var(--color-ink-subtle)]/60 border-r border-[var(--color-border)] bg-[var(--color-surface-sunken)]">
-                    {selectedVersion.code.split('\n').map((_, i) => (
-                      <div key={i} className="leading-5 h-5 text-[11px]">
+                  <div className={`py-3 pl-3 pr-2.5 text-right select-none text-[var(--color-ink-subtle)]/50 border-r border-[var(--color-border)] bg-[var(--color-surface-sunken)] shrink-0 ${fontSizeClass}`}>
+                    {codeLines.map((_, i) => (
+                      <div key={i} className={lineHClass}>
                         {i + 1}
                       </div>
                     ))}
                   </div>
 
                   {/* Code lines */}
-                  <pre className="py-3 px-4 leading-5 text-[var(--color-ink)] overflow-x-auto flex-1 font-mono">
+                  <pre
+                    className={`py-3 px-4 text-[var(--color-ink)] flex-1 font-mono ${fontSizeClass} ${
+                      isWordWrap ? 'whitespace-pre-wrap break-all' : 'overflow-x-auto whitespace-pre'
+                    }`}
+                  >
                     <code>{selectedVersion.code}</code>
                   </pre>
                 </div>

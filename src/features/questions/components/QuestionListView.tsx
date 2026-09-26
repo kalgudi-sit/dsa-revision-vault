@@ -16,6 +16,8 @@ import {
   ExternalLink,
   FolderKanban,
   FileCode,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { type Module } from '../../modules/types';
 import { type Sheet } from '../../sheets/types';
@@ -28,6 +30,7 @@ interface QuestionListViewProps {
   onSelectQuestion: (question: Question) => void;
   onOpenQuickAdd: () => void;
   onUpdateStatus: (id: string, status: RevisionStatus) => void;
+  onDeleteQuestion?: (id: string) => void;
 }
 
 export function QuestionListView({
@@ -38,11 +41,15 @@ export function QuestionListView({
   onSelectQuestion,
   onOpenQuickAdd,
   onUpdateStatus,
+  onDeleteQuestion,
 }: QuestionListViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  // Question delete confirmation modal
+  const [questionToDelete, setQuestionToDelete] = useState<Question | null>(null);
 
   // Filter questions
   const filtered = questions.filter((q) => {
@@ -233,6 +240,7 @@ export function QuestionListView({
                 <th className="py-2.5 px-4 hidden md:table-cell">Modules / Tags</th>
                 <th className="py-2.5 px-4 w-24 text-center hidden sm:table-cell">Solutions</th>
                 <th className="py-2.5 px-4 w-28 text-right">Last Reviewed</th>
+                <th className="py-2.5 px-3 w-12 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
@@ -335,11 +343,63 @@ export function QuestionListView({
                           })
                         : 'Never'}
                     </td>
+
+                    <td
+                      className="py-3 px-3 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {onDeleteQuestion && (
+                        <button
+                          type="button"
+                          onClick={() => setQuestionToDelete(q)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-ink-subtle)] hover:text-[var(--color-danger)] transition-all rounded hover:bg-[var(--color-surface)]"
+                          title="Delete question"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Delete Question Confirmation Dialog */}
+      {questionToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            onClick={() => setQuestionToDelete(null)}
+          />
+          <div className="relative bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md shadow-2xl w-full max-w-sm z-10 overflow-hidden flex flex-col p-4 space-y-3">
+            <div className="flex items-center gap-2 text-[var(--color-danger)]">
+              <AlertTriangle size={18} />
+              <h3 className="text-sm font-semibold">Delete Problem</h3>
+            </div>
+            <p className="text-xs text-[var(--color-ink)]">
+              Are you sure you want to delete <strong className="font-semibold">{questionToDelete.title}</strong>? All solutions and mistake notes will be removed.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <Button size="sm" variant="subtle" onClick={() => setQuestionToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  if (onDeleteQuestion) {
+                    onDeleteQuestion(questionToDelete.id);
+                  }
+                  setQuestionToDelete(null);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

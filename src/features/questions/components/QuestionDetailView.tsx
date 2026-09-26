@@ -15,16 +15,15 @@ import {
   ExternalLink,
   Edit,
   Trash2,
-  Calendar,
-  Layers,
   FolderKanban,
   FileText,
   Save,
   Clock,
-  Sparkles,
   AlertTriangle,
   CheckCircle2,
-  HelpCircle,
+  Plus,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface QuestionDetailViewProps {
@@ -55,6 +54,9 @@ export function QuestionDetailView({
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesBuffer, setNotesBuffer] = useState(question.notes);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [copiedLinkNotice, setCopiedLinkNotice] = useState(false);
 
   // Edit question metadata state
   const [editTitle, setEditTitle] = useState(question.title);
@@ -114,10 +116,22 @@ export function QuestionDetailView({
     setIsEditingNotes(true);
   };
 
+  const handleDeleteConfirmed = () => {
+    onDeleteQuestion(question.id);
+    setIsDeleteModalOpen(false);
+  };
+
+  const handleCopyTitleAndLinks = () => {
+    const text = `${question.title}\n${question.links.join('\n')}`;
+    navigator.clipboard.writeText(text);
+    setCopiedLinkNotice(true);
+    setTimeout(() => setCopiedLinkNotice(false), 2000);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--color-surface)]">
       {/* Question Header */}
-      <div className="px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col gap-3">
+      <div className="px-6 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex flex-col gap-3 shrink-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold text-[var(--color-ink)] tracking-tight">
@@ -125,10 +139,20 @@ export function QuestionDetailView({
             </h1>
             <DifficultyBadge difficulty={question.difficulty} />
             <StatusBadge status={question.status} />
+
+            <button
+              type="button"
+              onClick={handleCopyTitleAndLinks}
+              className="text-xs text-[var(--color-ink-subtle)] hover:text-[var(--color-brand)] flex items-center gap-1 ml-1"
+              title="Copy problem title and links"
+            >
+              {copiedLinkNotice ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+              <span>{copiedLinkNotice ? 'Copied' : 'Share'}</span>
+            </button>
           </div>
 
-          {/* Quick status change buttons */}
-          <div className="flex items-center gap-1.5 self-start md:self-auto">
+          {/* Quick status change buttons & Actions */}
+          <div className="flex items-center gap-1.5 self-start md:self-auto flex-wrap">
             <span className="text-xs text-[var(--color-ink-subtle)] mr-1">Status:</span>
             <button
               type="button"
@@ -169,18 +193,18 @@ export function QuestionDetailView({
             <Button size="sm" variant="subtle" onClick={handleOpenEditModal} icon={<Edit size={14} />}>
               Edit
             </Button>
-            <button
-              type="button"
+            <Button
+              size="sm"
+              variant="subtle"
               onClick={() => {
-                if (confirm(`Are you sure you want to delete "${question.title}"?`)) {
-                  onDeleteQuestion(question.id);
-                }
+                setDeleteConfirmText('');
+                setIsDeleteModalOpen(true);
               }}
-              className="p-1.5 text-[var(--color-ink-subtle)] hover:text-[var(--color-danger)] rounded hover:bg-[var(--color-surface-sunken)] transition-colors"
-              title="Delete question"
+              className="text-[var(--color-danger)] hover:bg-red-50 dark:hover:bg-red-950/40"
+              icon={<Trash2 size={14} />}
             >
-              <Trash2 size={15} />
-            </button>
+              Delete
+            </Button>
           </div>
         </div>
 
@@ -190,7 +214,7 @@ export function QuestionDetailView({
           {question.links.length > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-[var(--color-ink-subtle)]">Links:</span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {question.links.map((link, idx) => {
                   let host = 'Link';
                   try {
@@ -217,7 +241,7 @@ export function QuestionDetailView({
 
           {/* Tags */}
           {question.tags.length > 0 && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[var(--color-ink-subtle)]">Tags:</span>
               <div className="flex flex-wrap items-center gap-1">
                 {question.tags.map((tag) => (
@@ -252,10 +276,10 @@ export function QuestionDetailView({
       </div>
 
       {/* Main Grid: Left column (Notes & Mistake log) + Right column (Code Block Viewer) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-y-auto lg:overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 overflow-y-auto lg:overflow-hidden min-h-0">
         {/* Left Column: Notes & Mistake Log (lg:col-span-5) */}
         <div className="lg:col-span-5 border-b lg:border-b-0 lg:border-r border-[var(--color-border)] flex flex-col h-full bg-[var(--color-surface)] overflow-y-auto">
-          <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] flex items-center justify-between">
+          <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <FileText size={15} className="text-[var(--color-brand)]" />
               <span className="text-xs font-semibold text-[var(--color-ink)]">
@@ -297,9 +321,9 @@ export function QuestionDetailView({
             </div>
           </div>
 
-          <div className="p-4 flex-1 flex flex-col">
+          <div className="p-4 flex-1 flex flex-col min-h-0">
             {isEditingNotes ? (
-              <div className="flex-1 flex flex-col gap-2">
+              <div className="flex-1 flex flex-col gap-2 min-h-0">
                 <textarea
                   value={notesBuffer}
                   onChange={(e) => setNotesBuffer(e.target.value)}
@@ -307,7 +331,7 @@ export function QuestionDetailView({
                   className="w-full flex-1 p-3 text-xs font-sans rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] leading-relaxed resize-none"
                   placeholder="Record your intuition, mistakes you made, edge cases, and complexity..."
                 />
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 shrink-0">
                   <Button
                     size="sm"
                     variant="subtle"
@@ -402,6 +426,72 @@ export function QuestionDetailView({
           />
         </div>
       </div>
+
+      {/* Robust Delete Question Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            onClick={() => setIsDeleteModalOpen(false)}
+          />
+          <div className="relative bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md shadow-2xl w-full max-w-md z-10 overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-danger-subtle)] flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[var(--color-danger)]">
+                <AlertTriangle size={18} />
+                <h3 className="text-sm font-semibold">Delete Problem from Vault</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="text-xs text-[var(--color-ink-subtle)] hover:text-[var(--color-ink)]"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <p className="text-[var(--color-ink)]">
+                Are you sure you want to delete <strong className="font-semibold text-[var(--color-brand)]">{question.title}</strong>?
+              </p>
+              <p className="text-[var(--color-ink-subtle)]">
+                This will permanently delete all {question.codeBlocks.length} code solution versions and notes for this question from your local vault.
+              </p>
+
+              <div className="pt-2">
+                <label className="block text-[11px] text-[var(--color-ink-subtle)] mb-1">
+                  Type <strong className="text-[var(--color-ink)]">delete</strong> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="delete"
+                  className="w-full text-xs px-3 py-1.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-danger)]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={deleteConfirmText.toLowerCase().trim() !== 'delete'}
+                  onClick={handleDeleteConfirmed}
+                >
+                  Confirm Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Question Metadata Modal */}
       {isEditModalOpen && (
